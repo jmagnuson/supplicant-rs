@@ -1,0 +1,16 @@
+[package]
+name = "supplicant"
+version = "0.0.1"
+authors = ["Jon Magnuson <jon.magnuson@gmail.com>"]
+edition = "2021"
+license = "MIT/Apache-2.0"
+
+[dependencies]
+futures-util = "0.3"
+serde = { version = "1", features = ["derive"] }
+zbus = { version = "3", default-features = false, features = ["tokio"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+macaddr = "1"
+
