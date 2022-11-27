@@ -99,11 +99,12 @@ impl<'a> Interface<'a> {
         self.proxy.state().await?.parse()
     }
 
-    pub async fn state_stream(&'a self) -> impl futures_util::Stream<Item = Result<InterfaceState>> {
+    pub async fn state_stream(&'a self) -> impl futures_util::Stream<Item = /*Result<InterfaceState*/ crate::proxy::dbus_wpa_interface::PropertiesChanged>/*>*/ + 'a{
         use futures_util::stream::StreamExt;
         // TODO: no unwrap
         let prop_stream = self.proxy.receive_properties_changed().await.unwrap();
-        prop_stream.filter_map(|signal| async move {
+        prop_stream
+        /*let s = prop_stream.filter_map(|signal| async move {
             println!("signal: {:?}", &signal);
             let args = match signal.args() {
                 Ok(args) => args,
@@ -127,23 +128,9 @@ impl<'a> Interface<'a> {
             let val: &str = new_state.downcast_ref()?;
 
             Some(val.parse())
-            /*
-
-            for (name, value) in props.iter() {
-
-                // println!("{}.{} changed to `{:?}`", signal.name(), name, value);
-                println!("{} changed to `{:?}`", name, value);
-
-                if name == &"State" {
-                    return Some(value.parse());
-                }
-            }
-            None
-             */
-
-            // let new_state = props.get("State")?;
-            // new_state.parse()
-        })
+        });
+        s
+        */
     }
 }
 
