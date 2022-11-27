@@ -119,11 +119,6 @@ impl<'a> Interface<'a> {
             }
 
             let new_state = props.get("State")?;
-            /* TODO
-            let val: &str = match new_state.downcast_ref() {
-                Ok(val) => val,
-                Err(e) => return Some(e),
-            };*/
             let val: &str = new_state.downcast_ref()?;
 
             Some(val.parse())
