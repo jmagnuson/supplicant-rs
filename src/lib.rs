@@ -105,10 +105,10 @@ impl<'a> Interface<'a> {
         let prop_stream = self.proxy.receive_properties_changed().await.unwrap();
         let s = prop_stream.filter_map(|signal| async move {
             println!("signal: {:?}", &signal);
-            let args = /*match*/ signal.args().unwrap()/* {
+            let args = match signal.args() {
                 Ok(args) => args,
-                res @ Err(_e) => return Some(res),
-            }*/;
+                Err(e) => return Some(Err(e)),
+            };
             println!("args: {:?}", &args);
 
             let props = args.properties();
