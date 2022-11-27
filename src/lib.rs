@@ -5,7 +5,7 @@ use proxy::{
     dbus_wpa::wpa_supplicant1Proxy, dbus_wpa_bss::BSSProxy, dbus_wpa_interface::InterfaceProxy,
 };
 
-use zbus::zvariant::OwnedObjectPath;
+use zbus::zvariant::{OwnedObjectPath, Value};
 use zbus::{CacheProperties, Connection, Result};
 
 pub const SUPPLICANT_DBUS_NAME: &str = "fi.w1.wpa_supplicant1";
@@ -176,7 +176,22 @@ impl<'a> Bss<'a> {
         let mut wpa_value = self.proxy.wpa().await?;
         let key_mgmt = wpa_value
             .remove("KeyMgmt")
-            .map(|v| v.try_into())
+            .map(|v| {
+                //v.try_into()
+                /*let arr = match v {
+                    zbus::zvariant::OwnedValue::Array(arr) => arr,
+                    _ => panic!("unexpected keymgmt variant")
+                };*/
+                let arr: &zbus::zvariant::Array = v.downcast_ref().unwrap();
+                let vs: Vec<String> = arr.get().iter().map(|v| {
+                    let s: &str = v.downcast_ref().unwrap();
+                    s.to_string()
+                }).collect();
+                // let vs: Vec<String> = v.try_into()?;
+                // vs.iter().map(String::from).collect()
+
+                Ok::<_, zbus::Error>(vs)
+            })
             .transpose()?;
         let pairwise = wpa_value
             .remove("Pairwise")
