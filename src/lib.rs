@@ -103,13 +103,12 @@ impl<'a> Interface<'a> {
         use futures_util::stream::StreamExt;
         // TODO: no unwrap
         let prop_stream = self.proxy.receive_properties_changed().await.unwrap();
-        prop_stream.map(|_props| Ok(InterfaceState::Unknown))
-        /*let s = prop_stream.filter_map(|signal| async move {
+        let s = prop_stream.filter_map(|signal| async move {
             println!("signal: {:?}", &signal);
-            let args = match signal.args() {
+            let args = /*match*/ signal.args().unwrap()/* {
                 Ok(args) => args,
                 res @ Err(_e) => return Some(res),
-            };
+            }*/;
             println!("args: {:?}", &args);
 
             let props = args.properties();
@@ -130,7 +129,6 @@ impl<'a> Interface<'a> {
             Some(val.parse())
         });
         s
-        */
     }
 }
 
