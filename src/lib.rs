@@ -98,6 +98,53 @@ impl<'a> Interface<'a> {
     pub async fn state(&'a self) -> Result<InterfaceState> {
         self.proxy.state().await?.parse()
     }
+
+    pub async fn state_stream(&'a self) -> impl futures_util::Stream<Item = Result<InterfaceState>> {
+        use futures_util::stream::StreamExt;
+        // TODO: no unwrap
+        let prop_stream = self.proxy.receive_properties_changed().await.unwrap();
+        prop_stream.filter_map(|signal| async move {
+            println!("signal: {:?}", &signal);
+            let args = match signal.args() {
+                Ok(args) => args,
+                res @ Err(_e) => return Some(res),
+            };
+            println!("args: {:?}", &args);
+
+            let props = args.properties();
+            for (name, value) in props.iter() {
+                // let name: &str = name;
+                // let value: zbus::zvariant::Value = value;
+                println!("{} changed to `{:?}`", name, value);
+            }
+
+            let new_state = props.get("State")?;
+            /* TODO
+            let val: &str = match new_state.downcast_ref() {
+                Ok(val) => val,
+                Err(e) => return Some(e),
+            };*/
+            let val: &str = new_state.downcast_ref()?;
+
+            Some(val.parse())
+            /*
+
+            for (name, value) in props.iter() {
+
+                // println!("{}.{} changed to `{:?}`", signal.name(), name, value);
+                println!("{} changed to `{:?}`", name, value);
+
+                if name == &"State" {
+                    return Some(value.parse());
+                }
+            }
+            None
+             */
+
+            // let new_state = props.get("State")?;
+            // new_state.parse()
+        })
+    }
 }
 
 #[derive(Clone, Debug)]
