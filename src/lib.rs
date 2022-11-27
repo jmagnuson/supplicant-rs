@@ -1,4 +1,6 @@
 mod proxy;
+
+use std::str::FromStr;
 use proxy::{
     dbus_wpa::wpa_supplicant1Proxy, dbus_wpa_bss::BSSProxy, dbus_wpa_interface::InterfaceProxy,
 };
@@ -92,6 +94,10 @@ impl<'a> Interface<'a> {
     pub async fn ifname(&'a self) -> Result<String> {
         self.proxy.ifname().await
     }
+
+    pub async fn state(&'a self) -> Result<InterfaceState> {
+        self.proxy.state().await?.parse()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -167,4 +173,42 @@ pub struct Wpa {
     pub key_mgmt: Option<Vec<String>>,
     pub pairwise: Option<Vec<String>>,
     pub group: Option<String>,
+}
+
+/// "disconnected", "inactive", "scanning", "authenticating", "associating", "associated", "4way_handshake", "group_handshake", "completed","unknown".
+#[derive(Clone, Debug)]
+pub enum InterfaceState {
+    Disconnected,
+    Inactive,
+    Scanning,
+    Authenticating,
+    Associating,
+    Associated,
+    FourwayHandshake,
+    GroupHandshake,
+    Completed,
+    Unknown
+}
+
+impl FromStr for InterfaceState {
+    type Err = zbus::Error;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        use InterfaceState::*;
+        let val = match s {
+            "disconnected" => Disconnected,
+            "inactive" => Inactive,
+            "scanning" => Scanning,
+            "authenticating" => Authenticating,
+            "associating" => Associating,
+            "associated" => Associated,
+            "4way_handshake" => FourwayHandshake,
+            "group_handshake" => GroupHandshake,
+            "completed" => Completed,
+            "unknown" => Unknown,
+            _ => Err(zbus::Error::Variant(zbus::zvariant::Error::Message(format!("Failed to parse State value '{}'", s))))?
+        };
+
+        Ok(val)
+    }
 }
