@@ -11,7 +11,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .ok_or("Failed to find wlan0")??;
 
     let scan_done_fut = async {
-        let scan_done_stream = wlan_interface.scan_done_stream().await;
+        let scan_done_stream = wlan_interface.receive_scan_done().await;
         tokio::pin!(scan_done_stream);
         scan_done_stream.next().await.unwrap()
     };
@@ -38,7 +38,7 @@ async fn find_interface<'a>(
         let ifname = iface.ifname().await;
 
         match ifname {
-            Ok(name) if &name == iface_name.as_ref() => {
+            Ok(name) if name == iface_name.as_ref() => {
                 iface_res = Some(Ok(iface));
                 break;
             }
