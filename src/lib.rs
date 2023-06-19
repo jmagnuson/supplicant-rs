@@ -318,7 +318,8 @@ pub enum InterfaceState {
     FourwayHandshake,
     GroupHandshake,
     Completed,
-    Unknown
+    Unknown,
+    InterfaceDisabled,
 }
 
 impl FromStr for InterfaceState {
@@ -337,7 +338,10 @@ impl FromStr for InterfaceState {
             "group_handshake" => GroupHandshake,
             "completed" => Completed,
             "unknown" => Unknown,
-            _ => Err(zbus::Error::Variant(zbus::zvariant::Error::Message(format!("Failed to parse State value '{}'", s))))?
+            "interface_disabled" => InterfaceDisabled,
+            _ => Err(zbus::Error::Variant(zbus::zvariant::Error::Message(
+                format!("Failed to parse State value '{}'", s),
+            )))?,
         };
 
         Ok(val)
