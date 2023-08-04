@@ -1,15 +1,16 @@
 pub mod ieee80211;
 mod proxy;
 
-use std::str::FromStr;
+use futures_util::StreamExt;
 use proxy::{
     dbus_wpa::wpa_supplicant1Proxy, dbus_wpa_bss::BSSProxy, dbus_wpa_interface::InterfaceProxy,
 };
+use std::str::FromStr;
 use thiserror::Error;
 
+use crate::ieee80211::{Reason, StatusCode};
 use zbus::zvariant::OwnedObjectPath;
 use zbus::{CacheProperties, Connection, Error as ZbusError};
-use crate::ieee80211::{Reason, StatusCode};
 
 pub const SUPPLICANT_DBUS_NAME: &str = "fi.w1.wpa_supplicant1";
 
@@ -21,7 +22,7 @@ pub enum SupplicantError {
     #[error(transparent)]
     Dbus(DbusError),
     #[error(transparent)]
-    Io(#[from] std::io::Error)
+    Io(#[from] std::io::Error),
 }
 
 #[derive(Error, Debug)]
@@ -35,10 +36,8 @@ impl From<ZbusError> for SupplicantError {
         match zbus_err {
             #[allow(deprecated)]
             ZbusError::Io(io_err) => io_err.into(),
-            ZbusError::InputOutput(io_err) => {
-                std::io::Error::new(io_err.kind(), io_err).into()
-            },
-            _ => SupplicantError::Dbus(DbusError { inner: zbus_err })
+            ZbusError::InputOutput(io_err) => std::io::Error::new(io_err.kind(), io_err).into(),
+            _ => SupplicantError::Dbus(DbusError { inner: zbus_err }),
         }
     }
 }
@@ -60,17 +59,43 @@ impl<'a> Supplicant<'a> {
     }
 
     #[tracing::instrument]
-    pub async fn interfaces(&'a self) -> Result<Vec<Interface<'a>>> {
+    pub async fn interfaces(&self) -> Result<Vec<Interface<'_>>> {
         let interfaces = self.proxy.interfaces().await?;
 
         futures_util::future::join_all(
-            interfaces
-                .into_iter()
-                .map(|object_path| Interface::new(self.conn.clone(), &self.proxy, object_path)),
+            interfaces.into_iter().map(|object_path| {
+                Interface::new(self.conn.clone(), self.proxy.clone(), object_path)
+            }),
         )
         .await
         .into_iter()
         .collect::<Result<_>>()
+    }
+
+    #[tracing::instrument]
+    pub async fn receive_interface_added(
+        &self,
+    ) -> impl futures_util::Stream<Item = Result<Interface<'_>>> + '_ {
+        let iface_added_stream = self.proxy.receive_interface_added().await.unwrap();
+        iface_added_stream.then(move |iface_added| {
+            let proxy = self.proxy.clone();
+            async move {
+                let object_path = iface_added.args()?.path;
+                Interface::new(self.conn.clone(), proxy, object_path.into()).await
+            }
+        })
+    }
+
+    #[tracing::instrument]
+    pub async fn receive_interface_removed(
+        &self,
+    ) -> impl futures_util::Stream<Item = Result<OwnedObjectPath>> + '_ {
+        let iface_removed_stream = self.proxy.receive_interface_removed().await.unwrap();
+        iface_removed_stream.then(move |iface_removed| async move {
+            let args = iface_removed.args()?;
+            let object_path = args.path;
+            Ok(object_path.into())
+        })
     }
 }
 
@@ -79,20 +104,20 @@ pub struct Interface<'a> {
     conn: Connection,
     _path: OwnedObjectPath,
     proxy: InterfaceProxy<'a>,
-    supplicant_proxy: &'a wpa_supplicant1Proxy<'a>,
+    supplicant_proxy: wpa_supplicant1Proxy<'a>,
 }
 
 impl<'a> Interface<'a> {
     #[tracing::instrument]
     pub(crate) async fn new(
         conn: Connection,
-        supplicant_proxy: &'a wpa_supplicant1Proxy<'_>,
+        supplicant_proxy: wpa_supplicant1Proxy<'a>,
         interface_path: OwnedObjectPath,
     ) -> Result<Interface<'a>> {
         let proxy = InterfaceProxy::builder(&conn)
             .destination(SUPPLICANT_DBUS_NAME)?
             .path(interface_path.clone())?
-            .cache_properties(CacheProperties::No)
+            .cache_properties(CacheProperties::Lazily)
             .build()
             .await?;
 
@@ -105,7 +130,7 @@ impl<'a> Interface<'a> {
     }
 
     #[tracing::instrument]
-    pub async fn scan(&'a self) -> Result<()> {
+    pub async fn scan(&self) -> Result<()> {
         use std::collections::HashMap;
         let mut args: HashMap<&str, zbus::zvariant::Value<'_>> = HashMap::new();
 
@@ -115,82 +140,68 @@ impl<'a> Interface<'a> {
     }
 
     #[tracing::instrument]
-    pub async fn scan_done_stream(&'a self) -> impl futures_util::Stream<Item = Result<bool>> + 'a {
-        use futures_util::stream::StreamExt;
+    pub async fn receive_scan_done(&self) -> impl futures_util::Stream<Item = Result<bool>> + 'a {
         // TODO: no unwrap
         let scan_done_stream = self.proxy.receive_scan_done().await.unwrap();
-        let s = scan_done_stream.filter_map(|signal| async move {
+        scan_done_stream.then(|signal| async move {
             tracing::trace!("signal: {:?}", &signal);
-            let args = match signal.args() {
-                Ok(args) => args,
-                Err(e) => return Some(Err(e.into())),
-            };
-            tracing::trace!("args: {:?}", &args);
-            Some(Ok(args.success))
-        });
-        s
+            Ok(signal.args()?.success)
+        })
     }
 
     #[tracing::instrument]
-    pub async fn list_networks(&'a self) -> Result<Vec<Bss<'a>>> {
+    pub async fn list_networks(&self) -> Result<Vec<Bss<'_>>> {
         let bsss = self.proxy.bsss().await?;
-        futures_util::future::join_all(
-            bsss.into_iter()
-                .map(|object_path| Bss::new(self.conn.clone(), self.supplicant_proxy, object_path)),
-        )
+        futures_util::future::join_all(bsss.into_iter().map(|object_path| {
+            Bss::new(
+                self.conn.clone(),
+                self.supplicant_proxy.clone(),
+                object_path,
+            )
+        }))
         .await
         .into_iter()
         .collect::<Result<_>>()
     }
 
     #[tracing::instrument]
-    pub async fn ifname(&'a self) -> Result<String> {
+    pub async fn ifname(&self) -> Result<String> {
         self.proxy.ifname().await.map_err(From::from)
     }
 
     #[tracing::instrument]
-    pub async fn state(&'a self) -> Result<InterfaceState> {
+    pub async fn state(&self) -> Result<InterfaceState> {
         self.proxy.state().await?.parse().map_err(From::from)
     }
 
     #[tracing::instrument]
-    pub async fn state_stream(&'a self) -> impl futures_util::Stream<Item = Result<InterfaceState>> + 'a {
-        use futures_util::stream::StreamExt;
-        // TODO: no unwrap
-        let prop_stream = self.proxy.receive_properties_changed().await.unwrap();
-        let s = prop_stream.filter_map(|signal| async move {
-            tracing::trace!("signal: {:?}", &signal);
-            let args = match signal.args() {
-                Ok(args) => args,
-                Err(e) => return Some(Err(e.into())),
-            };
-            tracing::trace!("args: {:?}", &args);
-
-            let props = args.properties();
-            for (name, value) in props.iter() {
-                tracing::trace!(name = ?name, new_value = ?value, "Interface property changed");
-            }
-
-            let new_state = props.get("State")?;
-            let val: &str = new_state.downcast_ref()?;
-
-            Some(val.parse().map_err(From::from))
-        });
-        s
+    pub async fn receive_state_changed(
+        &self,
+    ) -> impl futures_util::Stream<Item = Result<InterfaceState>> + 'a {
+        let proxy = self.proxy.clone();
+        proxy
+            .receive_state_changed()
+            .await
+            .then(|state_prop| async move {
+                state_prop.get().await.map_err(From::from).and_then(|val| {
+                    tracing::trace!("state: {:?}", &val);
+                    val.parse().map_err(From::from)
+                })
+            })
     }
 
     #[tracing::instrument]
-    pub async fn disconnect_reason(&'a self) -> Result<Reason> {
+    pub async fn disconnect_reason(&self) -> Result<Reason> {
         Ok(self.proxy.disconnect_reason().await?.into())
     }
 
     #[tracing::instrument]
-    pub async fn association_status(&'a self) -> Result<StatusCode> {
+    pub async fn association_status(&self) -> Result<StatusCode> {
         Ok((self.proxy.assoc_status_code().await? as u16).into())
     }
 
     #[tracing::instrument]
-    pub async fn authentication_status(&'a self) -> Result<StatusCode> {
+    pub async fn authentication_status(&self) -> Result<StatusCode> {
         Ok((self.proxy.auth_status_code().await? as u16).into())
     }
 }
@@ -200,20 +211,20 @@ pub struct Bss<'a> {
     _conn: Connection,
     _path: OwnedObjectPath,
     proxy: BSSProxy<'a>,
-    _supplicant_proxy: &'a wpa_supplicant1Proxy<'a>,
+    _supplicant_proxy: wpa_supplicant1Proxy<'a>,
 }
 
 impl<'a> Bss<'a> {
     #[tracing::instrument]
     pub(crate) async fn new(
         conn: Connection,
-        supplicant_proxy: &'a wpa_supplicant1Proxy<'_>,
+        supplicant_proxy: wpa_supplicant1Proxy<'a>,
         bss_path: OwnedObjectPath,
     ) -> Result<Bss<'a>> {
         let proxy = BSSProxy::builder(&conn)
             .destination(SUPPLICANT_DBUS_NAME)?
             .path(bss_path.clone())?
-            .cache_properties(CacheProperties::No)
+            .cache_properties(CacheProperties::Lazily)
             .build()
             .await?;
 
@@ -225,36 +236,39 @@ impl<'a> Bss<'a> {
         })
     }
 
-    pub async fn bssid(&'a self) -> Result<Vec<u8>> {
+    pub async fn bssid(&self) -> Result<Vec<u8>> {
         self.proxy.bssid().await.map_err(From::from)
     }
 
-    pub async fn frequency(&'a self) -> Result<u16> {
+    pub async fn frequency(&self) -> Result<u16> {
         self.proxy.frequency().await.map_err(From::from)
     }
 
-    pub async fn ssid(&'a self) -> Result<Vec<u8>> {
+    pub async fn ssid(&self) -> Result<Vec<u8>> {
         self.proxy.ssid().await.map_err(From::from)
     }
 
-    pub async fn signal(&'a self) -> Result<i16> {
+    pub async fn signal(&self) -> Result<i16> {
         self.proxy.signal().await.map_err(From::from)
     }
 
-    pub async fn wpa(&'a self) -> Result<Wpa> {
+    pub async fn wpa(&self) -> Result<Wpa> {
         let mut wpa_value = self.proxy.wpa().await?;
         let key_mgmt = wpa_value
             .remove("KeyMgmt")
             .map(|v| v.try_into())
-            .transpose().map_err(ZbusError::from)?;
+            .transpose()
+            .map_err(ZbusError::from)?;
         let pairwise = wpa_value
             .remove("Pairwise")
             .map(|v| v.try_into())
-            .transpose().map_err(ZbusError::from)?;
+            .transpose()
+            .map_err(ZbusError::from)?;
         let group = wpa_value
             .remove("Group")
             .map(|v| v.try_into())
-            .transpose().map_err(ZbusError::from)?;
+            .transpose()
+            .map_err(ZbusError::from)?;
 
         Ok(Wpa {
             key_mgmt,
@@ -263,24 +277,28 @@ impl<'a> Bss<'a> {
         })
     }
 
-    pub async fn rsn(&'a self) -> Result<Rsn> {
+    pub async fn rsn(&self) -> Result<Rsn> {
         let mut wpa_value = self.proxy.rsn().await?;
         let key_mgmt = wpa_value
             .remove("KeyMgmt")
             .map(|v| v.try_into())
-            .transpose().map_err(ZbusError::from)?;
+            .transpose()
+            .map_err(ZbusError::from)?;
         let pairwise = wpa_value
             .remove("Pairwise")
             .map(|v| v.try_into())
-            .transpose().map_err(ZbusError::from)?;
+            .transpose()
+            .map_err(ZbusError::from)?;
         let group = wpa_value
             .remove("Group")
             .map(|v| v.try_into())
-            .transpose().map_err(ZbusError::from)?;
+            .transpose()
+            .map_err(ZbusError::from)?;
         let mgmt_group = wpa_value
             .remove("MgmtGroup")
             .map(|v| v.try_into())
-            .transpose().map_err(ZbusError::from)?;
+            .transpose()
+            .map_err(ZbusError::from)?;
 
         Ok(Rsn {
             key_mgmt,
@@ -318,7 +336,8 @@ pub enum InterfaceState {
     FourwayHandshake,
     GroupHandshake,
     Completed,
-    Unknown
+    Unknown,
+    InterfaceDisabled,
 }
 
 impl FromStr for InterfaceState {
@@ -337,7 +356,10 @@ impl FromStr for InterfaceState {
             "group_handshake" => GroupHandshake,
             "completed" => Completed,
             "unknown" => Unknown,
-            _ => Err(zbus::Error::Variant(zbus::zvariant::Error::Message(format!("Failed to parse State value '{}'", s))))?
+            "interface_disabled" => InterfaceDisabled,
+            _ => Err(zbus::Error::Variant(zbus::zvariant::Error::Message(
+                format!("Failed to parse State value '{}'", s),
+            )))?,
         };
 
         Ok(val)

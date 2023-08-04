@@ -10,7 +10,7 @@ impl From<i32> for Reason {
         let locally_generated = value.is_negative();
         Self {
             code,
-            locally_generated
+            locally_generated,
         }
     }
 }
@@ -230,7 +230,7 @@ impl From<u16> for ReasonCode {
             WLAN_REASON_MAC_ADDRESS_ALREADY_EXISTS_IN_MBSS => MacAddressAlreadyExistsInMbss,
             WLAN_REASON_MESH_CHANNEL_SWITCH_REGULATORY_REQ => MeshChannelSwitchRegulatoryReq,
             WLAN_REASON_MESH_CHANNEL_SWITCH_UNSPECIFIED => MeshChannelSwitchUnspecified,
-            val @ _ => Unknown(val),
+            val => Unknown(val),
         }
     }
 }

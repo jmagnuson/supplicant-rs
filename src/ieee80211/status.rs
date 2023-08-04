@@ -314,7 +314,7 @@ impl From<u16> for StatusCode {
             WLAN_STATUS_SAE_HASH_TO_ELEMENT => SaeHashToElement,
             WLAN_STATUS_SAE_PK => SaePk,
 
-            val @ _ => Unknown(val),
+            val => Unknown(val),
         }
     }
 }
@@ -429,4 +429,3 @@ impl From<StatusCode> for u16 {
         }
     }
 }
-
