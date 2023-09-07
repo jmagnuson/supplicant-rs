@@ -15,7 +15,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .await
         .ok_or("Failed to find wlan0")??;
 
-    let state_stream = wlan_interface.receive_state_changed();
+    let state_stream = wlan_interface.receive_state_changed().await;
     tokio::pin!(state_stream);
 
     loop {
