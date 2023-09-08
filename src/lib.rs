@@ -5,12 +5,16 @@ use futures_util::StreamExt;
 use proxy::{
     dbus_wpa::wpa_supplicant1Proxy, dbus_wpa_bss::BSSProxy, dbus_wpa_interface::InterfaceProxy,
 };
-use std::str::FromStr;
+use serde::Deserialize;
+use std::collections::HashSet;
+use std::convert::Infallible;
+use strum::ParseError;
 use thiserror::Error;
 
 use crate::ieee80211::{Reason, StatusCode};
 use zbus::zvariant::OwnedObjectPath;
 use zbus::{CacheProperties, Connection, Error as ZbusError};
+use zvariant::{OwnedValue, Type};
 
 pub const SUPPLICANT_DBUS_NAME: &str = "fi.w1.wpa_supplicant1";
 
@@ -39,6 +43,27 @@ impl From<ZbusError> for SupplicantError {
             ZbusError::InputOutput(io_err) => std::io::Error::new(io_err.kind(), io_err).into(),
             _ => SupplicantError::Dbus(DbusError { inner: zbus_err }),
         }
+    }
+}
+
+impl From<strum::ParseError> for SupplicantError {
+    fn from(value: ParseError) -> Self {
+        ZbusError::Variant(zbus::zvariant::Error::Message(format!(
+            "Failed to parse State value '{}'",
+            value
+        )))
+        .into()
+    }
+}
+
+impl From<zvariant::Error> for SupplicantError {
+    fn from(value: zvariant::Error) -> Self {
+        ZbusError::from(value).into()
+    }
+}
+impl From<Infallible> for SupplicantError {
+    fn from(value: Infallible) -> Self {
+        ZbusError::from(value).into()
     }
 }
 
@@ -256,19 +281,35 @@ impl<'a> Bss<'a> {
         let mut wpa_value = self.proxy.wpa().await?;
         let key_mgmt = wpa_value
             .remove("KeyMgmt")
-            .map(|v| v.try_into())
-            .transpose()
-            .map_err(ZbusError::from)?;
+            .map(|v| {
+                let vs: Vec<OwnedValue> = v.try_into().map_err(ZbusError::from)?;
+                let vval: Result<HashSet<wpa::KeyMgmt>> = vs
+                    .into_iter()
+                    .map(|s| wpa::KeyMgmt::try_from(s).map_err(From::from))
+                    .collect();
+                vval
+            })
+            .transpose()?;
         let pairwise = wpa_value
             .remove("Pairwise")
-            .map(|v| v.try_into())
-            .transpose()
-            .map_err(ZbusError::from)?;
-        let group = wpa_value
+            .map(|v| {
+                let vs: Vec<OwnedValue> = v.try_into().map_err(ZbusError::from)?;
+                let vval: Result<HashSet<wpa::Pairwise>> = vs
+                    .into_iter()
+                    .map(|s| wpa::Pairwise::try_from(s).map_err(From::from))
+                    .collect();
+                vval
+            })
+            .transpose()?;
+        let group: Option<wpa::Group> = wpa_value
             .remove("Group")
-            .map(|v| v.try_into())
+            .map(|v| {
+                let maybe_ov: Option<OwnedValue> = v.try_into().map_err(ZbusError::from)?;
+                let val: Option<wpa::Group> = maybe_ov.and_then(|s| wpa::Group::try_from(s).ok());
+                Ok::<_, SupplicantError>(val)
+            })
             .transpose()
-            .map_err(ZbusError::from)?;
+            .map(Option::flatten)?;
 
         Ok(Wpa {
             key_mgmt,
@@ -281,24 +322,45 @@ impl<'a> Bss<'a> {
         let mut wpa_value = self.proxy.rsn().await?;
         let key_mgmt = wpa_value
             .remove("KeyMgmt")
-            .map(|v| v.try_into())
-            .transpose()
-            .map_err(ZbusError::from)?;
+            .map(|v| {
+                let vs: Vec<OwnedValue> = v.try_into().map_err(ZbusError::from)?;
+                let vval: Result<HashSet<rsn::KeyMgmt>> = vs
+                    .into_iter()
+                    .map(|s| rsn::KeyMgmt::try_from(s).map_err(From::from))
+                    .collect();
+                vval
+            })
+            .transpose()?;
         let pairwise = wpa_value
             .remove("Pairwise")
-            .map(|v| v.try_into())
-            .transpose()
-            .map_err(ZbusError::from)?;
-        let group = wpa_value
+            .map(|v| {
+                let vs: Vec<OwnedValue> = v.try_into().map_err(ZbusError::from)?;
+                let vval: Result<HashSet<rsn::Pairwise>> = vs
+                    .into_iter()
+                    .map(|s| rsn::Pairwise::try_from(s).map_err(From::from))
+                    .collect();
+                vval
+            })
+            .transpose()?;
+        let group: Option<rsn::Group> = wpa_value
             .remove("Group")
-            .map(|v| v.try_into())
+            .map(|v| {
+                let maybe_ov: Option<OwnedValue> = v.try_into().map_err(ZbusError::from)?;
+                let val: Option<rsn::Group> = maybe_ov.and_then(|s| rsn::Group::try_from(s).ok());
+                Ok::<_, SupplicantError>(val)
+            })
             .transpose()
-            .map_err(ZbusError::from)?;
-        let mgmt_group = wpa_value
+            .map(Option::flatten)?;
+        let mgmt_group: Option<rsn::MgmtGroup> = wpa_value
             .remove("MgmtGroup")
-            .map(|v| v.try_into())
+            .map(|v| {
+                let maybe_ov: Option<OwnedValue> = v.try_into().map_err(ZbusError::from)?;
+                let val: Option<rsn::MgmtGroup> =
+                    maybe_ov.and_then(|s| rsn::MgmtGroup::try_from(s).ok());
+                Ok::<_, SupplicantError>(val)
+            })
             .transpose()
-            .map_err(ZbusError::from)?;
+            .map(Option::flatten)?;
 
         Ok(Rsn {
             key_mgmt,
@@ -309,23 +371,142 @@ impl<'a> Bss<'a> {
     }
 }
 
+#[macro_export]
+macro_rules! impl_traits_for_fromstr {
+    ($ty:ident) => {
+        impl TryFrom<zvariant::OwnedValue> for $ty {
+            type Error = $crate::SupplicantError;
+
+            fn try_from(value: zvariant::OwnedValue) -> std::result::Result<Self, Self::Error> {
+                use std::str::FromStr;
+                let value = String::try_from(value)?;
+                Ok($ty::from_str(value.as_str())?)
+            }
+        }
+
+        impl<'de> Deserialize<'de> for $ty {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                use std::str::FromStr;
+                let s = String::deserialize(deserializer)?;
+                $ty::from_str(s.as_str()).map_err(serde::de::Error::custom)
+            }
+        }
+    };
+}
+
 #[derive(Clone, Debug)]
 pub struct Wpa {
-    pub key_mgmt: Option<Vec<String>>,
-    pub pairwise: Option<Vec<String>>,
-    pub group: Option<String>,
+    pub key_mgmt: Option<HashSet<wpa::KeyMgmt>>,
+    pub pairwise: Option<HashSet<wpa::Pairwise>>,
+    pub group: Option<wpa::Group>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Rsn {
-    pub key_mgmt: Option<Vec<String>>,
-    pub pairwise: Option<Vec<String>>,
-    pub group: Option<String>,
-    pub mgmt_group: Option<String>,
+    pub key_mgmt: Option<HashSet<rsn::KeyMgmt>>,
+    pub pairwise: Option<HashSet<rsn::Pairwise>>,
+    pub group: Option<rsn::Group>,
+    pub mgmt_group: Option<rsn::MgmtGroup>,
+}
+
+mod wpa {
+    use serde::Deserialize;
+    use strum::EnumString;
+    use zvariant::Type;
+
+    // Key management suite. Possible array elements: "wpa-psk", "wpa-eap", "wpa-none"
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, EnumString, Type)]
+    #[strum(serialize_all = "kebab-case")]
+    #[zvariant(signature = "s", rename_all = "kebab-case")]
+    #[allow(clippy::enum_variant_names)]
+    pub enum KeyMgmt {
+        WpaPsk,
+        WpaEap,
+        WpaNone,
+    }
+    impl_traits_for_fromstr!(KeyMgmt);
+
+    // Pairwise cipher suites. Possible array elements: "ccmp", "tkip"
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, EnumString, Type)]
+    #[strum(serialize_all = "kebab-case")]
+    #[zvariant(signature = "s", rename_all = "kebab-case")]
+    pub enum Pairwise {
+        Ccmp,
+        Tkip,
+    }
+    impl_traits_for_fromstr!(Pairwise);
+
+    // Group cipher suite. Possible values are: "ccmp", "tkip", "wep104", "wep40"
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, EnumString, Type)]
+    #[strum(serialize_all = "kebab-case")]
+    #[zvariant(signature = "s", rename_all = "kebab-case")]
+    pub enum Group {
+        Ccmp,
+        Tkip,
+        Wep104,
+        Wep40,
+    }
+    impl_traits_for_fromstr!(Group);
+}
+mod rsn {
+    use serde::Deserialize;
+    use strum::EnumString;
+    use zvariant::Type;
+
+    // Key management suite. Possible array elements: "wpa-psk", "wpa-eap", "wpa-ft-psk", "wpa-ft-eap", "wpa-psk-sha256", "wpa-eap-sha256"
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, EnumString, Type)]
+    #[strum(serialize_all = "kebab-case")]
+    #[zvariant(signature = "s")]
+    #[allow(clippy::enum_variant_names)]
+    pub enum KeyMgmt {
+        WpaPsk,
+        WpaEap,
+        WpaFtPsk,
+        WpaFtEap,
+        WpaPskSha256,
+        WpaEapSha256,
+    }
+    impl_traits_for_fromstr!(KeyMgmt);
+
+    // Pairwise cipher suites. Possible array elements: "ccmp", "tkip"
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, EnumString, Type)]
+    #[strum(serialize_all = "kebab-case")]
+    #[zvariant(signature = "s")]
+    pub enum Pairwise {
+        Ccmp,
+        Tkip,
+    }
+    impl_traits_for_fromstr!(Pairwise);
+
+    // Group cipher suite. Possible values are: "ccmp", "tkip", "wep104", "wep40"
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, EnumString, Type)]
+    #[strum(serialize_all = "kebab-case")]
+    #[zvariant(signature = "s")]
+    pub enum Group {
+        Ccmp,
+        Tkip,
+        Wep104,
+        Wep40,
+    }
+    impl_traits_for_fromstr!(Group);
+
+    // 	Mangement frames cipher suite. Possible values are: "aes128cmac"
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, EnumString, Type)]
+    #[strum(serialize_all = "kebab-case")]
+    #[zvariant(signature = "s")]
+    pub enum MgmtGroup {
+        Aes128cmac,
+    }
+    impl_traits_for_fromstr!(MgmtGroup);
 }
 
 /// "disconnected", "inactive", "scanning", "authenticating", "associating", "associated", "4way_handshake", "group_handshake", "completed","unknown".
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, strum::EnumString, Type)]
+#[strum(serialize_all = "snake_case")]
+#[zvariant(signature = "s")]
 pub enum InterfaceState {
     Disconnected,
     Inactive,
@@ -333,35 +514,11 @@ pub enum InterfaceState {
     Authenticating,
     Associating,
     Associated,
+    #[strum(serialize = "4way_handshake")]
     FourwayHandshake,
     GroupHandshake,
     Completed,
     Unknown,
     InterfaceDisabled,
 }
-
-impl FromStr for InterfaceState {
-    type Err = zbus::Error;
-
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        use InterfaceState::*;
-        let val = match s {
-            "disconnected" => Disconnected,
-            "inactive" => Inactive,
-            "scanning" => Scanning,
-            "authenticating" => Authenticating,
-            "associating" => Associating,
-            "associated" => Associated,
-            "4way_handshake" => FourwayHandshake,
-            "group_handshake" => GroupHandshake,
-            "completed" => Completed,
-            "unknown" => Unknown,
-            "interface_disabled" => InterfaceDisabled,
-            _ => Err(zbus::Error::Variant(zbus::zvariant::Error::Message(
-                format!("Failed to parse State value '{}'", s),
-            )))?,
-        };
-
-        Ok(val)
-    }
-}
+impl_traits_for_fromstr!(InterfaceState);
