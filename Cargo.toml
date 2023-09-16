@@ -13,7 +13,7 @@ serde = { version = "1", features = ["derive"] }
 strum = { version = "0.25", features = ["derive"] }
 thiserror = "1"
 tracing = "0.1"
-zbus = { version = "3", default-features = false, features = ["tokio"] }
+zbus = { version = "3.7", default-features = false, features = ["tokio"] }
 zvariant = { version = "3" }
 
 [dev-dependencies]
