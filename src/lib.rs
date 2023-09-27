@@ -5,7 +5,10 @@ use futures_util::StreamExt;
 use proxy::{
     dbus_wpa::wpa_supplicant1Proxy, dbus_wpa_bss::BSSProxy, dbus_wpa_interface::InterfaceProxy,
 };
+
+#[cfg(feature = "serde")]
 use serde::Deserialize;
+
 use std::collections::HashSet;
 use std::convert::Infallible;
 use strum::ParseError;
@@ -384,6 +387,7 @@ macro_rules! impl_traits_for_fromstr {
             }
         }
 
+        #[cfg(feature = "serde")]
         impl<'de> Deserialize<'de> for $ty {
             fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
             where
@@ -413,7 +417,9 @@ pub struct Rsn {
 }
 
 mod wpa {
+    #[cfg(feature = "serde")]
     use serde::Deserialize;
+
     use strum::EnumString;
     use zvariant::Type;
 
@@ -452,7 +458,9 @@ mod wpa {
     impl_traits_for_fromstr!(Group);
 }
 mod rsn {
+    #[cfg(feature = "serde")]
     use serde::Deserialize;
+
     use strum::EnumString;
     use zvariant::Type;
 
