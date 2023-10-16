@@ -1,4 +1,8 @@
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Deserialize))]
 pub struct Reason {
     code: ReasonCode,
     locally_generated: bool,
@@ -99,6 +103,7 @@ const WLAN_REASON_MESH_CHANNEL_SWITCH_REGULATORY_REQ: u16 = 65;
 const WLAN_REASON_MESH_CHANNEL_SWITCH_UNSPECIFIED: u16 = 66;
 
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum ReasonCode {
     Unspecified,
     PrevAuthNotValid,

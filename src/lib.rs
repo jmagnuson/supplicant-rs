@@ -7,7 +7,7 @@ use proxy::{
 };
 
 #[cfg(feature = "serde")]
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use std::collections::HashSet;
 use std::convert::Infallible;
@@ -398,10 +398,21 @@ macro_rules! impl_traits_for_fromstr {
                 $ty::from_str(s.as_str()).map_err(serde::de::Error::custom)
             }
         }
+
+        #[cfg(feature = "serde")]
+        impl Serialize for $ty {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                serializer.serialize_str(&self.to_string())
+            }
+        }
     };
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Deserialize))]
 pub struct Wpa {
     pub key_mgmt: Option<HashSet<wpa::KeyMgmt>>,
     pub pairwise: Option<HashSet<wpa::Pairwise>>,
@@ -409,6 +420,7 @@ pub struct Wpa {
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Deserialize))]
 pub struct Rsn {
     pub key_mgmt: Option<HashSet<rsn::KeyMgmt>>,
     pub pairwise: Option<HashSet<rsn::Pairwise>>,

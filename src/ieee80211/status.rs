@@ -1,3 +1,6 @@
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 /* Status codes (IEEE Std 802.11-2016, 9.4.1.9, Table 9-46) */
 const WLAN_STATUS_SUCCESS: u16 = 0;
 const WLAN_STATUS_UNSPECIFIED_FAILURE: u16 = 1;
@@ -102,6 +105,7 @@ const WLAN_STATUS_SAE_HASH_TO_ELEMENT: u16 = 126;
 const WLAN_STATUS_SAE_PK: u16 = 127;
 
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum StatusCode {
     Success,
     UnspecifiedFailure,
