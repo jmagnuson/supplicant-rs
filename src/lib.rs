@@ -5,7 +5,10 @@ use futures_util::StreamExt;
 use proxy::{
     dbus_wpa::wpa_supplicant1Proxy, dbus_wpa_bss::BSSProxy, dbus_wpa_interface::InterfaceProxy,
 };
-use serde::Deserialize;
+
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 use std::collections::HashSet;
 use std::convert::Infallible;
 use strum::ParseError;
@@ -384,6 +387,7 @@ macro_rules! impl_traits_for_fromstr {
             }
         }
 
+        #[cfg(feature = "serde")]
         impl<'de> Deserialize<'de> for $ty {
             fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
             where
@@ -394,10 +398,21 @@ macro_rules! impl_traits_for_fromstr {
                 $ty::from_str(s.as_str()).map_err(serde::de::Error::custom)
             }
         }
+
+        #[cfg(feature = "serde")]
+        impl Serialize for $ty {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                serializer.serialize_str(&self.to_string())
+            }
+        }
     };
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Deserialize))]
 pub struct Wpa {
     pub key_mgmt: Option<HashSet<wpa::KeyMgmt>>,
     pub pairwise: Option<HashSet<wpa::Pairwise>>,
@@ -405,6 +420,7 @@ pub struct Wpa {
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Deserialize))]
 pub struct Rsn {
     pub key_mgmt: Option<HashSet<rsn::KeyMgmt>>,
     pub pairwise: Option<HashSet<rsn::Pairwise>>,
@@ -413,7 +429,9 @@ pub struct Rsn {
 }
 
 mod wpa {
+    #[cfg(feature = "serde")]
     use serde::Deserialize;
+
     use strum::EnumString;
     use zvariant::Type;
 
@@ -452,7 +470,9 @@ mod wpa {
     impl_traits_for_fromstr!(Group);
 }
 mod rsn {
+    #[cfg(feature = "serde")]
     use serde::Deserialize;
+
     use strum::EnumString;
     use zvariant::Type;
 

@@ -9,7 +9,7 @@ license = "MIT/Apache-2.0"
 
 [dependencies]
 futures-util = "0.3"
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive"], optional = true }
 strum = { version = "0.25", features = ["derive"] }
 thiserror = "1"
 tracing = "0.1"
