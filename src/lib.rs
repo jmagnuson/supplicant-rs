@@ -1,3 +1,4 @@
+#[rustfmt::skip]
 pub mod ieee80211;
 mod proxy;
 
