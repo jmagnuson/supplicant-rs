@@ -2,7 +2,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Debug)]
-#[cfg_attr(feature = "serde", derive(Deserialize))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct Reason {
     code: ReasonCode,
     locally_generated: bool,
