@@ -1,3 +1,4 @@
+#[rustfmt::skip]
 pub mod ieee80211;
 mod proxy;
 
@@ -388,7 +389,7 @@ macro_rules! impl_traits_for_fromstr {
         }
 
         #[cfg(feature = "serde")]
-        impl<'de> Deserialize<'de> for $ty {
+        impl<'de> serde::Deserialize<'de> for $ty {
             fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
             where
                 D: serde::Deserializer<'de>,
@@ -400,8 +401,8 @@ macro_rules! impl_traits_for_fromstr {
         }
 
         #[cfg(feature = "serde")]
-        impl Serialize for $ty {
-            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        impl serde::Serialize for $ty {
+            fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
             where
                 S: serde::Serializer,
             {
@@ -412,7 +413,7 @@ macro_rules! impl_traits_for_fromstr {
 }
 
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "serde", derive(Deserialize))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct Wpa {
     pub key_mgmt: Option<HashSet<wpa::KeyMgmt>>,
     pub pairwise: Option<HashSet<wpa::Pairwise>>,
@@ -420,7 +421,7 @@ pub struct Wpa {
 }
 
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "serde", derive(Deserialize))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct Rsn {
     pub key_mgmt: Option<HashSet<rsn::KeyMgmt>>,
     pub pairwise: Option<HashSet<rsn::Pairwise>>,
@@ -429,14 +430,11 @@ pub struct Rsn {
 }
 
 mod wpa {
-    #[cfg(feature = "serde")]
-    use serde::Deserialize;
-
     use strum::EnumString;
     use zvariant::Type;
 
     // Key management suite. Possible array elements: "wpa-psk", "wpa-eap", "wpa-none"
-    #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, EnumString, Type)]
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, EnumString, Type, strum::Display)]
     #[strum(serialize_all = "kebab-case")]
     #[zvariant(signature = "s", rename_all = "kebab-case")]
     #[allow(clippy::enum_variant_names)]
@@ -448,7 +446,7 @@ mod wpa {
     impl_traits_for_fromstr!(KeyMgmt);
 
     // Pairwise cipher suites. Possible array elements: "ccmp", "tkip"
-    #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, EnumString, Type)]
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, EnumString, Type, strum::Display)]
     #[strum(serialize_all = "kebab-case")]
     #[zvariant(signature = "s", rename_all = "kebab-case")]
     pub enum Pairwise {
@@ -458,7 +456,7 @@ mod wpa {
     impl_traits_for_fromstr!(Pairwise);
 
     // Group cipher suite. Possible values are: "ccmp", "tkip", "wep104", "wep40"
-    #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, EnumString, Type)]
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, EnumString, Type, strum::Display)]
     #[strum(serialize_all = "kebab-case")]
     #[zvariant(signature = "s", rename_all = "kebab-case")]
     pub enum Group {
@@ -470,14 +468,11 @@ mod wpa {
     impl_traits_for_fromstr!(Group);
 }
 mod rsn {
-    #[cfg(feature = "serde")]
-    use serde::Deserialize;
-
     use strum::EnumString;
     use zvariant::Type;
 
     // Key management suite. Possible array elements: "wpa-psk", "wpa-eap", "wpa-ft-psk", "wpa-ft-eap", "wpa-psk-sha256", "wpa-eap-sha256"
-    #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, EnumString, Type)]
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, EnumString, Type, strum::Display)]
     #[strum(serialize_all = "kebab-case")]
     #[zvariant(signature = "s")]
     #[allow(clippy::enum_variant_names)]
@@ -492,7 +487,7 @@ mod rsn {
     impl_traits_for_fromstr!(KeyMgmt);
 
     // Pairwise cipher suites. Possible array elements: "ccmp", "tkip"
-    #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, EnumString, Type)]
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, EnumString, Type, strum::Display)]
     #[strum(serialize_all = "kebab-case")]
     #[zvariant(signature = "s")]
     pub enum Pairwise {
@@ -502,7 +497,7 @@ mod rsn {
     impl_traits_for_fromstr!(Pairwise);
 
     // Group cipher suite. Possible values are: "ccmp", "tkip", "wep104", "wep40"
-    #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, EnumString, Type)]
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, EnumString, Type, strum::Display)]
     #[strum(serialize_all = "kebab-case")]
     #[zvariant(signature = "s")]
     pub enum Group {
@@ -514,7 +509,7 @@ mod rsn {
     impl_traits_for_fromstr!(Group);
 
     // 	Mangement frames cipher suite. Possible values are: "aes128cmac"
-    #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, EnumString, Type)]
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, EnumString, Type, strum::Display)]
     #[strum(serialize_all = "kebab-case")]
     #[zvariant(signature = "s")]
     pub enum MgmtGroup {
@@ -524,7 +519,7 @@ mod rsn {
 }
 
 /// "disconnected", "inactive", "scanning", "authenticating", "associating", "associated", "4way_handshake", "group_handshake", "completed","unknown".
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, strum::EnumString, Type)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, strum::EnumString, Type, strum::Display)]
 #[strum(serialize_all = "snake_case")]
 #[zvariant(signature = "s")]
 pub enum InterfaceState {
