@@ -2,8 +2,12 @@
 name = "supplicant"
 version = "0.0.1"
 authors = ["Jon Magnuson <jon.magnuson@gmail.com>"]
-description = "Bindings for wpa-supplicant"
+description = "Bindings for wpa_supplicant"
 repository = "https://github.com/jmagnuson/supplicant-rs"
+documentation = "https://docs.rs/supplicant"
+readme = "README.md"
+categories = ["api-bindings", "asynchronous", "network-programming", "os::unix-apis"]
+keywords = ["wpa_supplicant", "dbus", "wifi", "networking", "tokio"]
 edition = "2021"
 license = "MIT/Apache-2.0"
 
