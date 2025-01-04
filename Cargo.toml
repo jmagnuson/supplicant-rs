@@ -1,6 +1,6 @@
 [package]
 name = "supplicant"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Jon Magnuson <jon.magnuson@gmail.com>"]
 description = "Bindings for wpa_supplicant"
 repository = "https://github.com/jmagnuson/supplicant-rs"
