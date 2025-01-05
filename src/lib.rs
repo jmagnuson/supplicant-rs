@@ -102,6 +102,13 @@ impl<'a> Supplicant<'a> {
     }
 
     #[tracing::instrument]
+    pub async fn get_interface(&self, ifname: &str) -> Result<Interface<'_>> {
+        let object_path = self.proxy.get_interface(ifname).await?;
+
+        Interface::new(self.conn.clone(), self.proxy.clone(), object_path).await
+    }
+
+    #[tracing::instrument]
     pub async fn receive_interface_added(
         &self,
     ) -> impl futures_util::Stream<Item = Result<Interface<'_>>> + '_ {
