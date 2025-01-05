@@ -17,7 +17,7 @@ use thiserror::Error;
 
 use crate::ieee80211::{Reason, StatusCode};
 use zbus::zvariant::OwnedObjectPath;
-use zbus::{CacheProperties, Connection, Error as ZbusError};
+use zbus::{proxy::CacheProperties, Connection, Error as ZbusError};
 use zvariant::{OwnedValue, Type};
 
 pub const SUPPLICANT_DBUS_NAME: &str = "fi.w1.wpa_supplicant1";
@@ -42,8 +42,6 @@ pub struct DbusError {
 impl From<ZbusError> for SupplicantError {
     fn from(zbus_err: ZbusError) -> Self {
         match zbus_err {
-            #[allow(deprecated)]
-            ZbusError::Io(io_err) => io_err.into(),
             ZbusError::InputOutput(io_err) => std::io::Error::new(io_err.kind(), io_err).into(),
             _ => SupplicantError::Dbus(DbusError { inner: zbus_err }),
         }
@@ -168,9 +166,11 @@ impl<'a> Interface<'a> {
     #[tracing::instrument]
     pub async fn scan(&self) -> Result<()> {
         use std::collections::HashMap;
-        let mut args: HashMap<&str, zbus::zvariant::Value<'_>> = HashMap::new();
+        use zbus::zvariant::Value;
+        let mut args: HashMap<&str, &Value<'_>> = HashMap::new();
 
-        args.insert("Type", "active".into());
+        let active: Value<'_> = "active".into();
+        args.insert("Type", &active);
 
         self.proxy.scan(args).await.map_err(From::from)
     }
@@ -314,13 +314,7 @@ impl<'a> Bss<'a> {
             .transpose()?;
         let group: Option<wpa::Group> = wpa_value
             .remove("Group")
-            .map(|v| {
-                let maybe_ov: Option<OwnedValue> = v.try_into().map_err(ZbusError::from)?;
-                let val: Option<wpa::Group> = maybe_ov.and_then(|s| wpa::Group::try_from(s).ok());
-                Ok::<_, SupplicantError>(val)
-            })
-            .transpose()
-            .map(Option::flatten)?;
+            .and_then(|ov| wpa::Group::try_from(ov).ok());
 
         Ok(Wpa {
             key_mgmt,
@@ -355,23 +349,10 @@ impl<'a> Bss<'a> {
             .transpose()?;
         let group: Option<rsn::Group> = wpa_value
             .remove("Group")
-            .map(|v| {
-                let maybe_ov: Option<OwnedValue> = v.try_into().map_err(ZbusError::from)?;
-                let val: Option<rsn::Group> = maybe_ov.and_then(|s| rsn::Group::try_from(s).ok());
-                Ok::<_, SupplicantError>(val)
-            })
-            .transpose()
-            .map(Option::flatten)?;
+            .and_then(|ov| rsn::Group::try_from(ov).ok());
         let mgmt_group: Option<rsn::MgmtGroup> = wpa_value
             .remove("MgmtGroup")
-            .map(|v| {
-                let maybe_ov: Option<OwnedValue> = v.try_into().map_err(ZbusError::from)?;
-                let val: Option<rsn::MgmtGroup> =
-                    maybe_ov.and_then(|s| rsn::MgmtGroup::try_from(s).ok());
-                Ok::<_, SupplicantError>(val)
-            })
-            .transpose()
-            .map(Option::flatten)?;
+            .and_then(|ov| rsn::MgmtGroup::try_from(ov).ok());
 
         Ok(Rsn {
             key_mgmt,
